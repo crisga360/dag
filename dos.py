@@ -1,15 +1,11 @@
 from airflow.models import DAG
 from airflow.operators.python_operator import PythonOperator
 from airflow.utils.dates import days_ago
-#from airflow.operators.sensors import ExternalTaskSensor
-from airflow.sensors import BaseSensorOperator
-
-# https://towardsdatascience.com/dependencies-between-dags-in-apache-airflow-2f5935cde3f0
+from airflow.sensors.external_task_sensor import ExternalTaskSensor
 
 dag = DAG(
-    dag_id = 'dependencia_dos',
+    dag_id='dependencia_dos',
     schedule_interval='@once',
-    #owner: 'test',
     start_date=days_ago(0),
     catchup=False
 )
@@ -21,18 +17,26 @@ def print_end_message(**kwargs):
     print("END")
 
 externalsensor1 = ExternalTaskSensor(
-        task_id='dependencia_uno_completed_Status',
-        external_dag_id='dependencia_uno',
-        external_task_id=None,
-        check_existence=True)
+    task_id='dependencia_uno_completed_Status',
+    external_dag_id='dependencia_uno',
+    external_task_id=None,
+    check_existence=True,
+    mode="poke",  # Specify sensor mode
+    poke_interval=60,  # Adjust poke interval as needed
+    timeout=600,  # Adjust timeout as needed
+    dag=dag
+)
 
+success = PythonOperator(
+    task_id='success',
+    python_callable=print_success_message,
+    dag=dag
+)
 
-success = PythonOperator(task_id='success',
-                        python_callable=print_success_message,
-                        dag=dag)
+end = PythonOperator(
+    task_id='end',
+    python_callable=print_end_message,
+    dag=dag
+)
 
-end = PythonOperator(task_id='end',
-                        python_callable=print_end_message,
-                        dag=dag)
-
-[externalsensor1] >> success >> end
+externalsensor1 >> success >> end
