@@ -1,35 +1,55 @@
-from airflow.models import DAG
-from airflow.operators.python_operator import PythonOperator
-from airflow.utils.dates import days_ago
-from airflow.operators.bash_operator import BashOperator
+from datetime import datetime, timedelta
+from airflow import DAG
+from airflow.contrib.operators.spark_submit_operator import SparkSubmitOperator
 
-# https://towardsdatascience.com/dependencies-between-dags-in-apache-airflow-2f5935cde3f0
+# Definir los argumentos del DAG
+default_args = {
+    'owner': 'usuario',
+    'depends_on_past': False,
+    'start_date': datetime(2024, 3, 20),
+    'email_on_failure': False,
+    'email_on_retry': False,
+    'retries': 1,
+    'retry_delay': timedelta(minutes=5),
+}
 
-dag = DAG(
-    dag_id = 'dependencia_uno',
-    schedule_interval='@once',
-    #owner: 'test',
-    start_date=days_ago(0),
-    catchup=False
-)
+# Definir el DAG
+with DAG('sistema_recomendacion_peliculas_spark',
+         default_args=default_args,
+         schedule_interval=timedelta(days=1)) as dag:
 
-def print_success_message(**kwargs):
-    print("Success!!")
+    # Tarea para ejecutar el trabajo Spark para adquirir datos
+    acquire_data_task = SparkSubmitOperator(
+        task_id='acquire_data',
+        conn_id='spark_default',  # Conexión a Spark definida en Airflow
+        application='/home/aiflow/dag/acquire_data.py',  # Ruta al script Spark
+        verbose=True
+    )
 
-def print_end_message(**kwargs):
-    print("END")
+    # Tarea para preprocesar datos
+    preprocess_data_task = SparkSubmitOperator(
+        task_id='preprocess_data',
+        conn_id='spark_default',
+        application='/home/aiflow/dag/preprocess_data.py',
+        verbose=True
+    )
 
+    # Tarea para analizar datos y generar recomendaciones
+    analyze_data_task = SparkSubmitOperator(
+        task_id='analyze_data',
+        conn_id='spark_default',
+        application='/home/aiflow/dag/analyze_data.py',
+        verbose=True
+    )
 
-delay_one_min: BashOperator = BashOperator(task_id="delay_one_min",
-dag=dag,
-bash_command="sleep 1m")
+    # Tarea para presentar los resultados
+    present_results_task = SparkSubmitOperator(
+        task_id='present_results',
+        conn_id='spark_default',
+        application='/home/aiflow/dag/present_results.py',
+        verbose=True
+    )
 
-success = PythonOperator(task_id='success',
-python_callable=print_success_message,
-dag=dag)
+    # Definir dependencias entre tareas
+    acquire_data_task >> preprocess_data_task >> analyze_data_task >> present_results_task
 
-end = PythonOperator(task_id='end',
-python_callable=print_end_message,
-dag=dag)
-
-success >> delay_one_min >> end
